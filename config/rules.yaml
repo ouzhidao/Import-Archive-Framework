@@ -1,0 +1,53 @@
+# 防错校验规则集（M5 用）——所有规则只报警不阻塞，报警进审核意见初稿备注栏
+# 阈值与开关在此调整，代码不改动。
+
+rules:
+  - id: R1_five_elements
+    name: 五要素自洽
+    enabled: true
+    fields: [contract_no, bl_numbers, cartons, net_weight_kg, vessel]
+    logic: 同票内上述字段跨单据取值一致；数值允许 tolerance 内误差
+    tolerance:
+      net_weight_kg: 0.005       # ±0.5%
+      cartons: 0                 # 箱数必须精确一致
+
+  - id: R2_origin_vs_shipment
+    name: 原产国≠启运国矛盾
+    enabled: true
+    logic: 报关单启运国 与 产地证/卫生证原产国 冲突则报警（贸易国可不同，原产国不可错报）
+    source_case: 26B 启运国错报中国
+
+  - id: R3_multi_producer_one_cert
+    name: 双厂合并一证
+    enabled: true
+    logic: 单张检疫证出现 >= 2 个不同生产厂家名/注册号
+    source_case: 26B 一张检疫证合并两个生产厂家
+
+  - id: R4_cert_ticket_match
+    name: 证-票一致
+    enabled: true
+    logic: 检疫证/卫生证生产厂家 ∈ 本票供应商集团的 producers 清单（suppliers.yaml）
+
+  - id: R5_lot_uniqueness
+    name: 批号/证书号跨票复用
+    enabled: true
+    logic: 同 LOT 或同证书号出现在 >= 2 个业务票 → 报警
+    source_case: 检疫证被两不同批次字节级复用
+
+  - id: R6_label_lot_match
+    name: 标签-批次一致
+    enabled: true
+    logic: 标签 LOT 与 COA/箱单 LOT 一致
+    source_case: 标签 LOT 对调
+
+# OCR / 字段抽取置信度
+confidence:
+  ocr_accept: 0.85         # 百度 OCR 单字段置信度 >= 此值直接采信
+  ocr_escalate: 0.60       # < 此值升多模态兜底轨；区间内标"待人工确认"
+  assign_auto: 0.90        # 归票置信度 >= 此值自动归票
+  assign_queue: 0.60       # < 此值进人工确认队列
+
+# 草稿/原件打分阈值（信号见《规范_业务票ID与归票.md》）
+draft_scoring:
+  draft_threshold: 3       # >= 判草稿
+  original_threshold: -2   # <= 判原件；区间值进人工队列

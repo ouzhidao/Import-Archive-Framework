@@ -1,0 +1,19 @@
+# 目的港 → 代理路由表（M2/M8 用）
+# 联系方式属敏感信息，本模板留空；真实值只填在本地受控副本，不进 Git。
+
+routes:
+  - port: 青岛
+    agent_id: agent_qd_01        # 青岛代理（1 家）
+    contact: ""                  # TODO: 用户填（邮箱/微信标识）
+  - port: 大连
+    agent_id: agent_dl_a         # 大连代理 A
+    contact: ""                  # TODO: 用户填
+  - port: 大连
+    agent_id: agent_dl_b         # 大连代理 B
+    contact: ""                  # TODO: 用户填
+    note: 大连两家代理的分工规则（按供应商？按船公司？）待用户补充后写死
+
+# 代理确认话术约定：以下关键词视为"审单通过"，便于半自动判定
+agent_ack_keywords: [OK, 无误, 没问题, 确认无误, 可以]
+
+# 多港口可能共 4 个（背景说明书②）；新增港口在此追加

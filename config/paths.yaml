@@ -1,0 +1,20 @@
+# 路径配置——全管线唯一的硬编码路径出口
+# 换机器 / 换平台 / 换目录，只改这一个文件。
+
+archive_root: "C:/Users/34009/Desktop/03_合同与订单/进口单证归档"            # L1–L4 归档根（示例，按实际改）
+                                           # 正式环境指向 Desktop/03_合同与订单/进口单证归档
+
+work_root: "./runtime"                     # 管线工作区（相对 import-archive-framework 根）
+inbox_dir: "{work_root}/inbox"             # M1 投递目录（邮件附件落地/人工投递）
+tickets_dir: "{work_root}/tickets"         # M2 归票工作区（含 _待确认/ 人工队列）
+ocr_cache_dir: "{work_root}/cache/ocr"     # M3 OCR 缓存（键=文件哈希）
+outbox_dir: "{work_root}/outbox"           # M6 初稿 / M8 待发文件
+report_dir: "{work_root}/reports"          # M5 校验报告
+
+master_files:                              # L1 三张主数据表（相对 archive_root）
+  supplier_registry: "00_主档/进口鱼糜供应商及生产厂家统计记录.xlsx"
+  contract_master: "00_主档/鳕鱼合同.xls"
+  inventory: "00_主档/鱼糜数量统计.xlsx"
+
+# 红线：archive_root 下真实单据不改动、不删除、不移动、不推送
+# M7 落盘 = 从 tickets_dir 复制（copy）而非移动（move），源文件保留至人工确认后清理

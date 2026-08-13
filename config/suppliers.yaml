@@ -1,0 +1,67 @@
+# 供应商主数据配置（L2 目录维度）
+# 规则：L2 用集团名；工厂/生产商/原产国是标签，不拆目录。
+# 维护方式：新增供应商在此追加，代码不改动。
+
+suppliers:
+  - group_id: SUP_PRG
+    name: PRG（俄渔 PACIFIC RIM GROUP）
+    trade_country: RU
+    producers:                      # 旗下加工船/工厂（标签）
+      - KAPITAN VDOVICHENKO
+      - MEKHANIK MASLAK
+      - PROLIV LONGA
+      - RFC集团
+    contract_prefixes: ["PRG-"]     # 合同号前缀，归票器用
+    seal_exception: false           # 双章原则：无例外
+
+  - group_id: SUP_AMERICAN_SEAFOODS
+    name: 美国海产（AMERICAN SEAFOODS）
+    trade_country: US
+    producers: [ROV, TRI, JAE, EAG, DYN]   # 对华出口船
+    contract_prefixes: []
+    seal_exception: false
+
+  - group_id: SUP_ULKA
+    name: ULKA（印度集团）
+    trade_country: IN
+    producers: [SHREE ULKA LLP, ULKA SEAFOODS]  # 两关联主体，同目录
+    contract_prefixes: []
+    seal_exception: false
+    note: 两主体曾交错归档，迁移时需归并到本目录
+
+  - group_id: SUP_LECKER_INDUSTRY
+    name: 日水（LECKER INDUSTRY CO.,LTD）
+    trade_country: JP
+    represents: [美国货, 泰国Starfish, 泰国金线]   # 贸易商≠原产国
+    contract_prefixes: ["LKE-"]
+    seal_exception: false
+    note: 原产国标签必须单独记录，不能按目录推断
+
+  - group_id: SUP_THESEAFOODCOMPANY
+    name: TheSeafoodCompany（新加坡贸易商 / 印尼生产）
+    trade_country: SG
+    producers: [印尼工厂]
+    contract_prefixes: []
+    seal_exception: true            # 全档案唯一：仅签字、无章
+
+  - group_id: SUP_DALU
+    name: DALU（名义中国 / 实为越南来源）
+    trade_country: CN
+    origin_country: VN              # 原产国标签
+    contract_prefixes: ["DL"]
+    seal_exception: false
+
+  # 国内/转口贸易：轻量归档，不套进口齐备性矩阵
+  - group_id: SUP_SONGTIAN
+    name: 松田（国内贸易）
+    domestic: true
+  - group_id: SUP_CMCC
+    name: CMCC（转口/保税库转卖）
+    domestic: true
+  - group_id: SUP_GID
+    name: GID（转口/保税库转卖）
+    domestic: true
+
+# 合同号前缀曾混写：LS / SL / CLS 视为同一族，归票时归一化
+contract_prefix_aliases:
+  - [LS, SL, CLS]

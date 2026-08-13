@@ -1,0 +1,88 @@
+# 单据类型受控词表 + 必须性矩阵 + 状态词表
+# 归票器/校验器只认这里定义的类型与状态；新增单据类型在此追加。
+
+materials:            # L3 物料词表（itoroyi 含鲢鱼，已敲定）
+  - pollock           # 鳕鱼
+  - itoroyi           # 金线（含鲢鱼）
+  - fillet            # 鱼片（单列）
+  - other             # 香精、添加剂等
+
+doc_types:
+  - id: 合同
+    folder: 01_合同及附加
+    necessity: 必备
+    note: 原则双章；TheSeafoodCompany 仅签字例外（见 suppliers.yaml）
+  - id: 附加合同
+    folder: 01_合同及附加
+    necessity: 建议留存
+    note: 报价用；仅 PRG 有，其他供应商无则不报警
+  - id: 发票
+    folder: 02_发票箱单
+    necessity: 必备
+  - id: 箱单
+    folder: 02_发票箱单
+    necessity: 必备
+    note: 数量/装箱核对
+  - id: 提单
+    folder: 03_提单
+    necessity: 必备
+    note: 多 B/L 时文件名补 B/L 号
+  - id: 产地证
+    folder: 04_官方通关单证
+    necessity: 必备
+    note: 关税优惠（FORM E 等）
+  - id: 捕捞证
+    folder: 04_官方通关单证
+    necessity: 条件必备
+    condition: 出口国要求时（俄/美等）
+  - id: 卫生证
+    folder: 04_官方通关单证
+    necessity: 必备
+    note: 出口国官方卫生证书（规范名，非"健康证"）
+  - id: 进境检疫许可证
+    folder: 04_官方通关单证
+    necessity: 视情况
+    note: 进口前办理（前置）；海产品（鱼糜/鱼片/金线）经确认无需该证，属视情况
+  - id: 检疫证明
+    folder: 04_官方通关单证
+    necessity: 必备
+    note: 入境检验检疫放行证明，到货后出
+  - id: 报关单
+    folder: 04_官方通关单证
+    necessity: 必备
+  - id: 税单税费
+    folder: 04_官方通关单证
+    necessity: 建议留存
+    note: 有最好，没有不报警
+  - id: COA出厂报告
+    folder: 05_质量与付款
+    necessity: 建议留存
+  - id: 我方报告单
+    folder: 05_质量与付款
+    necessity: 建议留存
+    note: 验收/自检，保税入库建议留
+  - id: 水单
+    folder: 05_质量与付款
+    necessity: 建议留存
+  - id: 标签
+    folder: 06_标签及其他
+    necessity: 条件必备
+    condition: 预包装时；原料大包装常非强制
+  - id: 其他
+    folder: 06_标签及其他
+    necessity: 视情况
+
+status_vocab:         # 文件状态词表（文件名第 4 段）
+  - 正本
+  - 盖章件
+  - 副本
+  - 未加密
+  - 扫描件
+  - 草稿
+
+# 文件名规范：{YYYYMMDD}_{主合同号}_{单据类型}_{状态}.ext
+# 日期/合同号从业务票级继承，不从单文件重抓（防报关单号数字误判为日期）
+filename_pattern: "{YYYYMMDD}_{主合同号}_{单据类型}_{状态}.ext"
+
+# 国内贸易商（suppliers.yaml 中 domestic: true）不套用本矩阵
+skip_matrix_for_domestic: true
