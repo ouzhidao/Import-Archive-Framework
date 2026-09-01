@@ -44,11 +44,15 @@ def _load_env() -> Dict[str, str]:
 
 _ENV = _load_env()
 
-# 百度 OCR（主轨）双账户主备
+# 百度 OCR（主轨）多账户主备（2026-09-01 加第三账户 C，配额用尽自动切换）
 BAIDU_AK_A = _ENV.get("BAIDU_OCR_AK_A", "")
 BAIDU_SK_A = _ENV.get("BAIDU_OCR_SK_A", "")
 BAIDU_AK_B = _ENV.get("BAIDU_OCR_AK_B", "")
 BAIDU_SK_B = _ENV.get("BAIDU_OCR_SK_B", "")
+BAIDU_AK_C = _ENV.get("BAIDU_OCR_AK_C", "")
+BAIDU_SK_C = _ENV.get("BAIDU_OCR_SK_C", "")
+# 账户列表（A→B→C 顺序尝试，配额错误自动切下一个）
+BAIDU_ACCOUNTS = [(BAIDU_AK_A, BAIDU_SK_A), (BAIDU_AK_B, BAIDU_SK_B), (BAIDU_AK_C, BAIDU_SK_C)]
 
 # ---------------------------------------------------------------------------
 # Config from environment (secrets live in .env, never in Git)
@@ -209,7 +213,7 @@ def baidu_ocr_image(image_path: str, preprocess: bool = False) -> Dict:
         return {"source": "baidu", "words": [], "raw_text": "", "confidence": 0.0,
                 "error": "OCR 月度配额硬顶已到，跳过（请在 runtime/ocr_quota.json 查看）"}
     last = None
-    for ak, sk in ((BAIDU_AK_A, BAIDU_SK_A), (BAIDU_AK_B, BAIDU_SK_B)):
+    for ak, sk in BAIDU_ACCOUNTS:
         if not ak or not sk:
             continue
         try:
