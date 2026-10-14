@@ -40,6 +40,13 @@ rules:
     logic: 标签 LOT 与 COA/箱单 LOT 一致
     source_case: 标签 LOT 对调
 
+  - id: R7_customs_quarantine_match
+    name: 清关报关单-检疫证号关联
+    enabled: true
+    logic: 清关(0110)报关单号 = 检疫证号前18位（检疫证号 = 报关单号 + 后缀001）；不符报警
+    note: 仅适用一般贸易(清关)；保税入库(1233)单不适用
+    source_case: 2026-09-04 用户确认，26A-01/03/26B/ULKA-254903922 实测吻合
+
 # OCR / 字段抽取置信度
 confidence:
   ocr_accept: 0.85         # 百度 OCR 单字段置信度 >= 此值直接采信
