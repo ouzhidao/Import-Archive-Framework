@@ -88,3 +88,6 @@ filename_pattern: "{YYYYMMDD}_{主合同号}_{单据类型}_{状态}.ext"
 
 # 国内贸易商（suppliers.yaml 中 domestic: true）不套用本矩阵
 skip_matrix_for_domestic: true
+
+# 2026-09-04 缺件展示规则（用户要求）：缺件清单必须带「吨位 + 冷库名称」方便查找。
+# 冷库名取自 index.warehouse（报关单"货物存放地点"提取 + 人工补全）。
