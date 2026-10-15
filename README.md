@@ -2,6 +2,10 @@
 
 > 进口鱼糜/鱼片单证自动化整理框架。**本仓库只存方法/规范/脚本/模板**；真实业务单据留本地，永不进 Git。
 > 数据边界见 `.gitignore` 与 `AGENTS.md`。
+>
+> 🔗 **平行项目**：合同与订单整理框架（`WorkBuddy/2026-07-29-10-01-16/contract-order-framework`，
+> Git `ouzhidao/Contract-Order-Consolidation`）——管「我方 → 供应商的采购合同/订单」，
+> 本项目管「供应商 → 我方的进口单证」。两者互补，**无代码依赖**。
 
 ## 目录
 
@@ -23,6 +27,7 @@
 3. 复制 `.env.example` 为 `.env` 填百度 OCR 密钥（A主/B备）
 4. `python scripts/ocr_vision.py <pdf>` 验证 OCR
 5. `python scripts/ticket_overview.py` 生成票总览 HTML 查看器
+6. `python scripts/audit_archive.py` **只读审计**（index / 红线区 / 缺件清单 三方差异 + R7/R5）
 
 ## 核心文档
 

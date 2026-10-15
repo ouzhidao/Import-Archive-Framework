@@ -22,6 +22,11 @@ _backup/
 *.csv
 *.json
 
+# 例外：结构性 JSON（索引卡 Schema）必须入库
+# 否则会被上面的 *.json 兜底行静默挡住（曾导致 schema/ 内容永远进不了 Git）
+!schema/*.json
+!schema/**/*.json
+
 # 本地机密 / 机器差异配置
 .env
 .env.local

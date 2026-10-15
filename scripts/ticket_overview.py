@@ -1,9 +1,47 @@
 # -*- coding: utf-8 -*-
-import sys, io, pathlib, json, datetime, re, hashlib
+import sys, io, pathlib, json, datetime, re
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TICKETS = ROOT / "runtime" / "tickets"
 OUT_HTML = ROOT / "runtime" / "票总览.html"
+
+# 供应商集团 -> 目录名 / 展示短名（与 pipeline_core.SUP_GROUP_CN 保持一致）
+SUP_DIR_CN = {
+    "SUP_PRG": "SUP_PRG", "SUP_AMERICAN_SEAFOODS": "SUP_美国海产", "SUP_ULKA": "SUP_ULKA",
+    "SUP_LECKER_INDUSTRY": "SUP_日水", "SUP_THESEAFOODCOMPANY": "SUP_TheSeafoodCompany",
+    "SUP_DALU": "SUP_DALU", "SUP_SONGTIAN": "SUP_松田", "SUP_CMCC": "SUP_CMCC", "SUP_GID": "SUP_GID",
+}
+SUP_SHORT = {
+    "SUP_PRG": "PRG", "SUP_ULKA": "ULKA", "SUP_AMERICAN_SEAFOODS": "美国海产",
+    "SUP_LECKER_INDUSTRY": "日水", "SUP_DALU": "DALU", "SUP_SONGTIAN": "松田",
+    "SUP_THESEAFOODCOMPANY": "TheSeafoodCompany", "SUP_CMCC": "CMCC", "SUP_GID": "GID",
+}
+MAT_CN = {"pollock": "鳕鱼", "itoroyi": "金线", "fillet": "鱼片", "other": "其他"}
+
+
+def load_archive_root():
+    """红线区根：优先读 config/paths.yaml（唯一路径出口），失败回退默认。"""
+    cfg = ROOT / "config" / "paths.yaml"
+    if cfg.exists():
+        for line in cfg.read_text(encoding="utf-8").splitlines():
+            m = re.match(r'\s*archive_root:\s*"([^"]+)"', line)
+            if m:
+                return pathlib.Path(m.group(1))
+    return pathlib.Path(r"C:/Users/34009/Desktop/03_合同与订单/进口单证归档")
+
+
+def build_real_l4_index():
+    """扫红线区得到 {票ID: 真实L4目录名}，修「打开整理目录」指向错（如 26A-06 label=202607 实目录=202608）。只读。"""
+    idx = {}
+    root = load_archive_root()
+    if not root.exists():
+        return idx
+    for p in root.rglob("*"):
+        if p.is_dir() and p.parent.name in ("鳕鱼", "金线", "鱼片", "其他"):
+            m = re.match(r"^\d{6}-[\d.]+t-(.+)$", p.name)
+            if m:
+                idx[m.group(1)] = p.name
+    return idx
 
 def load():
     out = []
@@ -22,14 +60,17 @@ def dedup(card):
 
 def main():
     tickets = load()
+    real_l4 = build_real_l4_index()      # 红线区真实目录名（只读），修「打开整理目录」指向错
     data = []
     for c in tickets:
         docs = dedup(c)
         compl = c.get("completeness",{})
+        grp = c.get("supplier_group","")
         data.append({
             "label": c.get("friendly_label", c["ticket_id"]),
             "tid": c["ticket_id"],
-            "supplier": "PRG" if "PRG" in c["supplier_group"] else ("ULKA" if "ULKA" in c["supplier_group"] else c["supplier_group"]),
+            "grp": grp,
+            "supplier": SUP_SHORT.get(grp, grp),
             "material": c.get("material",""),
             "bl": c.get("bl_numbers",[]),
             "date": c.get("date",""),
@@ -47,23 +88,22 @@ def main():
         })
         for d in docs:
             data[-1]["types"][d["type"]] = data[-1]["types"].get(d["type"],0)+1
-    # 补 F 盘整理目录路径（快速定位）
-    F_ROOT = pathlib.Path(r"F:/采购资料/采购部资料/采购部供方管理,订单，合同 尾牙/原料供应商/鳕鱼相关/进口原料单证整理")
-    mat_cn = {"pollock":"鳕鱼","itoroyi":"金线","fillet":"鱼片","other":"其他"}
+    # 补整理目录路径（快速定位）——优先用红线区真实目录名，避免 L4 年月口径不一致导致指向错
     for t in data:
-        sup_dir = "SUP_PRG" if t["supplier"]=="PRG" else "SUP_ULKA"
-        mat = mat_cn.get(t["material"], t["material"])
-        # L4 = 日期前6位-吨位-票ID
-        # 友好标签如 PRG-202602-47.58t -> 年月 202602，吨位 47.58
+        sup_dir = SUP_DIR_CN.get(t["grp"], t["grp"])
+        mat = MAT_CN.get(t["material"], t["material"])
+        # 兜底：按友好标签推 L4（{年月}-{吨位}t-{票ID}）
         m_l = re.search(r"-(\d{6})-(\d+(?:\.\d+)?)t$", t["label"])
         if m_l:
             ym, ton = m_l.group(1), m_l.group(2)
-            l4 = f"{ym}-{ton}t-{t['tid']}"
+            l4_fallback = f"{ym}-{ton}t-{t['tid']}"
         else:
             m_t = re.search(r"-(\d+(?:\.\d+)?)t$", t["label"])
             ton = m_t.group(1) if m_t else ""
-            l4 = f"{t['date'][:6]}-{ton}t-{t['tid']}" if ton else t["tid"]
-        t["folder"] = f"{'SUP_PRG' if t['supplier']=='PRG' else 'SUP_ULKA'}\\{mat}\\{l4}"
+            l4_fallback = f"{t['date'][:6]}-{ton}t-{t['tid']}" if ton else t["tid"]
+        l4 = real_l4.get(t["tid"], l4_fallback)          # 真实目录优先
+        t["folder"] = f"{sup_dir}\\{mat}\\{l4}"
+        t["folder_verified"] = t["tid"] in real_l4       # False = 红线区未找到，路径为推算值
         # 发票明细展示：支持多等级，每组 等级/数量/价格，用空位分隔（尽量一行）
         inv = t["inv"]
         grades = inv.get("grades", [])
@@ -82,11 +122,14 @@ def main():
         t["prod_display"] = "　".join(pd_parts)
         # 定位文件夹 HTML（Python 端拼好，避免 JS 转义问题）
         if t["folder"]:
-            t["folder_html"] = '<a href="#" onclick="openFolder(&quot;' + t["folder"] + '&quot;);return false;" style="color:#2563eb;text-decoration:underline;font-size:12px">📂 打开整理目录</a>'
+            mark = "" if t.get("folder_verified") else "（红线区未找到，此为推算路径）"
+            t["folder_html"] = ('<a href="#" onclick="openFolder(&quot;' + t["folder"] +
+                                '&quot;);return false;" style="color:#2563eb;text-decoration:underline;font-size:12px">📂 打开整理目录</a>' +
+                                (f'<span style="color:#b45309;font-size:12px">{mark}</span>' if mark else ""))
     # 生成 HTML
+    # json.dumps 输出即为合法 JS 字面量（换行转义为 \n）；不要二次 replace，
+    # 否则路径里的单反斜杠会被翻倍、真实换行会变成字面 \n（历史 BUG）。
     data_json = json.dumps(data, ensure_ascii=False)
-    # JS \\n 转义（借鉴原料标签库：JS字符串里的换行要写成 \\\\n）
-    data_json = data_json.replace("\\\\", "\\\\\\\\").replace("\\n", "\\\\n")
     gen = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">

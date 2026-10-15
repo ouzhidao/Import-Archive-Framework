@@ -91,28 +91,71 @@ _OCR_CALL_LOG: List[Dict] = []
 _OCR_QUOTA_DAILY = 200     # 单日警戒（百度免费 1000/月，保守按日控制）
 _OCR_QUOTA_MAX = 900       # 月度硬顶，到顶即拒（留余量给人工兜底）
 
+# 配额落盘（跨次运行累计，否则"月度硬顶"只在单进程内生效 = 形同虚设）
+_QUOTA_FILE = pathlib.Path(__file__).resolve().parent.parent / "runtime" / "ocr_quota.json"
+
+
+def _month_key() -> str:
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m")
+
+
+def _load_quota_store() -> Dict:
+    try:
+        if _QUOTA_FILE.exists():
+            return json.loads(_QUOTA_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_quota_store(store: Dict) -> None:
+    """原子写（.tmp + replace），防半写坏文件。"""
+    try:
+        _QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _QUOTA_FILE.with_name(_QUOTA_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, _QUOTA_FILE)
+    except Exception:
+        pass
+
 
 def _log_ocr_call(image_path: str, ok: bool):
-    """记录每次 OCR 调用，便于配额审计。"""
+    """记录每次 OCR 调用（内存 + 落盘），便于跨次配额审计。"""
     import datetime
     _OCR_CALL_LOG.append({
         "time": datetime.datetime.now().isoformat(),
         "image": str(pathlib.Path(image_path).name),
         "ok": ok,
     })
+    store = _load_quota_store()
+    month = store.setdefault(_month_key(), {"calls": 0, "ok": 0, "fail": 0})
+    month["calls"] = int(month.get("calls", 0)) + 1
+    month["ok" if ok else "fail"] = int(month.get("ok" if ok else "fail", 0)) + 1
+    _save_quota_store(store)
 
 
 def ocr_quota_used() -> int:
-    return len(_OCR_CALL_LOG)
+    """本月已用次数（以落盘为准）。落盘不可用时退回本次进程内计数。"""
+    store = _load_quota_store()
+    persisted = store.get(_month_key(), {}).get("calls")
+    if persisted is None:
+        return len(_OCR_CALL_LOG)
+    return int(persisted)
 
 
 def ocr_quota_report() -> Dict:
+    store = _load_quota_store()
+    this_month = store.get(_month_key(), {})
     return {
+        "month": _month_key(),
+        "month_calls_persisted": this_month.get("calls", 0),
         "calls_this_process": len(_OCR_CALL_LOG),
         "ok": sum(1 for c in _OCR_CALL_LOG if c["ok"]),
         "fail": sum(1 for c in _OCR_CALL_LOG if not c["ok"]),
         "daily_warn": _OCR_QUOTA_DAILY,
         "monthly_hardcap": _OCR_QUOTA_MAX,
+        "quota_file": str(_QUOTA_FILE),
     }
 
 
@@ -211,7 +254,8 @@ def baidu_ocr_image(image_path: str, preprocess: bool = False) -> Dict:
     """
     if ocr_quota_used() >= _OCR_QUOTA_MAX:
         return {"source": "baidu", "words": [], "raw_text": "", "confidence": 0.0,
-                "error": "OCR 月度配额硬顶已到，跳过（请在 runtime/ocr_quota.json 查看）"}
+                "error": f"OCR 月度配额硬顶已到（本月已用 {ocr_quota_used()}/{_OCR_QUOTA_MAX}），"
+                         f"跳过；配额明细见 {_QUOTA_FILE}"}
     last = None
     for ak, sk in BAIDU_ACCOUNTS:
         if not ak or not sk:
