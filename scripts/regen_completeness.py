@@ -117,7 +117,7 @@ def main():
             card["docs"] = [d for d in card.get("docs", []) if d.get("file") not in ph]
             note = card.setdefault("notes", [])
             if isinstance(note, list):
-                note.append(f"2026-10-15 删除占位条目 {ph}（母合同按必备处理）")
+                note.append(f"{now[:10]} 删除占位条目 {ph}（母合同按必备处理）")
         card["completeness"] = {"missing": r["missing"], "conditional_missing": r["cond"]}
         card["completeness_source"] = "redline_scan"
         card["completeness_at"] = now

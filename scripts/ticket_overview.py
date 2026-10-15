@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 import sys, io, pathlib, json, datetime, re
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+try:                                     # 幂等重设编码（不要新建 TextIOWrapper，否则旧 wrapper 被 GC 会关掉 buffer）
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TICKETS = ROOT / "runtime" / "tickets"
 OUT_HTML = ROOT / "runtime" / "票总览.html"

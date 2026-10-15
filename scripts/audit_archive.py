@@ -25,7 +25,10 @@ import sys
 from collections import Counter, defaultdict
 
 if hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    try:                                 # 幂等重设编码，避免新建 wrapper 关掉 buffer（同进程多脚本互相 import 时会崩）
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TICKETS_DIR = ROOT / "runtime" / "tickets"
@@ -230,17 +233,25 @@ def main():
     for tid, rl in sorted(redline.items()):
         if rl is None:
             continue
-        customs, quar = [], []
+        customs, quar, quar_noid = [], [], []
         for rel in rl["files"]:
             nm = pathlib.Path(rel).name
             nums = NUM18_RE.findall(nm)
-            if not nums:
-                continue
             if "_报关单_" in nm:
+                if not nums:
+                    continue
                 role = "清关" if "_清关_" in nm else ("保税入库" if "_保税入库_" in nm else "未标角色")
                 customs.append((role, nums[-1][:18]))
             if "_检疫证明_" in nm:
-                quar.append(nums[-1][:18])
+                if nums:
+                    quar.append(nums[-1][:18])
+                else:
+                    quar_noid.append(nm)          # 文件名无 18 位号 → 违命名规范，R7 无法校验
+        # 检疫证明缺号 → 报警（原来被静默 continue 掉）
+        for nm in quar_noid:
+            findings.append({"级别": "B", "票": tid,
+                             "问题": f"检疫证明文件名缺 18 位号，R7 无法校验：{nm}"})
+            print(f"  {tid:30s} ⚠ 检疫证缺号，R7 跳过：{nm}")
         for q in quar:
             pref = q[:18]
             hit = [c for r, c in customs if r == "清关" and c == pref]

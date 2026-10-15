@@ -104,6 +104,12 @@ python scripts/build_archive_sample.py
 # 生成票总览 HTML 查看器（分层筛选/搜索/发票明细/捕捞区域）
 python scripts/ticket_overview.py
 # 或双击 F 盘 _刷新工具/刷新票总览.bat（从 C 盘数据生成到 F 盘 HTML）
+
+# 只读审计（index / 红线区 / 缺件清单 三方差异 + R7/R5）——不改数据
+python scripts/audit_archive.py
+
+# 按红线区重算齐备性 + 生成缺件清单.md（缺件真源=红线区；默认 dry-run）
+python scripts/regen_completeness.py [--write]
 ```
 
 ## 七.5 票总览 HTML 查看器（人侧界面）

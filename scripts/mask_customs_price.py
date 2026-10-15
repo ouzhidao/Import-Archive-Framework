@@ -9,7 +9,9 @@ import sys, re, pathlib, tempfile, os
 import fitz
 
 def _is_money(t):
-    return t in ('美元', 'USD') or re.fullmatch(r'\d{1,4}\.\d{2,4}', t)
+    # 2026-10-15 修：原 `\d{1,4}\.\d{2,4}` 漏掉 ≥5 位整数的总价（如 149877.00）→ 会残留价格。
+    # 放宽为「1+位数字（可含千分位）+ 2~4 位小数」，仍不匹配纯整数（箱数/件数），避免误删数量。
+    return t in ('美元', 'USD', 'CNY', 'RMB', '人民币') or bool(re.fullmatch(r'\d[\d,]*\.\d{2,4}', t))
 
 def _money_spans(pg):
     rs = []
@@ -44,8 +46,31 @@ def make_noprice(src, dst=None):
     os.replace(tmp, str(dst))
     return dst, n
 
+
+def verify_no_price(pdf_path):
+    """落盘后自检：重新打开输出件，统计残留的金额样式 span（0 = 干净）。"""
+    left = []
+    with fitz.open(str(pdf_path)) as d:
+        for pi in range(len(d)):
+            for b in d[pi].get_text('dict')['blocks']:
+                if b.get('type') != 0:
+                    continue
+                for l in b['lines']:
+                    for sp in l['spans']:
+                        if _is_money(sp['text'].strip()):
+                            left.append((pi + 1, sp['text'].strip()))
+    return left
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print(__doc__); sys.exit(1)
     out, n = make_noprice(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
     print(f'已生成不带价版: {out} ({n} 页含价格已清)')
+    left = verify_no_price(out)
+    if left:
+        print(f'⚠ 自检：仍残留 {len(left)} 处金额样式（需人工确认/调边界）:')
+        for pg, t in left[:20]:
+            print(f'    p{pg}: {t}')
+        sys.exit(2)
+    print('自检通过：未发现残留金额')

@@ -99,11 +99,18 @@ def new_index_card(ticket_id: str, contract: str, supplier_group: str, material:
 
 
 def doc_type_from_filename(filename: str, doc_types: List[Dict]) -> Optional[str]:
-    """按受控词表匹配文件名中的单据类型。"""
-    fn = filename
-    for dt in doc_types:
-        tid = dt.get("id", "")
-        if tid and tid in fn:
+    """按受控词表匹配文件名中的单据类型。
+
+    2026-10-15 修：按词长**降序**匹配（否则「附加合同」会先被「合同」命中而误判），
+    并优先匹配 `_类型_` 独立段，子串匹配仅作兜底。
+    """
+    ids = [dt.get("id", "") for dt in doc_types if dt.get("id")]
+    segs = set(pathlib.Path(filename).stem.split("_"))
+    for tid in sorted(ids, key=len, reverse=True):
+        if tid in segs:
+            return tid
+    for tid in sorted(ids, key=len, reverse=True):
+        if tid in filename:
             return tid
     return None
 
@@ -111,19 +118,45 @@ def doc_type_from_filename(filename: str, doc_types: List[Dict]) -> Optional[str
 # ---------------------------------------------------------------------------
 # M5 校验
 # ---------------------------------------------------------------------------
+# 报关单展示话术（AGENTS.md §七.6，2026-10-15 用户定）
+CUSTOMS_REQUIRED = "清关报关单"    # 我方清关（监管 0110）→ 必备
+CUSTOMS_BONDED = "保税报关单"      # 无我方信息的保税入库（1233）→ 非必须
+
+
+def _norm_doc_id(x: str) -> str:
+    """把 index/清单里的受控词归一到展示话术。"""
+    if x in ("报关单", CUSTOMS_REQUIRED):
+        return CUSTOMS_REQUIRED
+    if x == CUSTOMS_BONDED:
+        return CUSTOMS_BONDED
+    return x
+
+
 def check_completeness(doc_ids: List[str], doc_types: List[Dict]) -> Dict:
-    """按必须性矩阵检查齐备性。返回 missing / conditional_missing。"""
-    missing = []
-    conditional_missing = []
-    present = set(doc_ids)
+    """按必须性矩阵检查齐备性。返回 missing / conditional_missing / unverified。
+
+    2026-10-15 修：报关单不再按 doc_types 里的「条件必备」处理——
+      清关报关单（我方）＝必备；保税报关单（无我方信息）＝非必须、不报警。
+      这里与 scripts/regen_completeness.py、scripts/audit_archive.py 保持同一口径。
+    """
+    present = {_norm_doc_id(x) for x in doc_ids}
+    missing, conditional_missing, unverified = [], [], []
     for dt in doc_types:
         tid = dt.get("id", "")
+        if tid == "报关单":
+            if CUSTOMS_REQUIRED not in present:
+                if "报关单" in doc_ids:          # 有单据但没标角色 → 无法判定，不硬报缺
+                    unverified.append(CUSTOMS_REQUIRED)
+                else:
+                    missing.append(CUSTOMS_REQUIRED)
+            continue
         nec = dt.get("necessity", "视情况")
         if nec == "必备" and tid not in present:
             missing.append(tid)
         elif nec == "条件必备" and tid not in present:
             conditional_missing.append(tid)
-    return {"missing": missing, "conditional_missing": conditional_missing}
+    return {"missing": missing, "conditional_missing": conditional_missing,
+            "unverified": unverified}
 
 
 def rule_checks(card: Dict, rules_cfg: Dict) -> List[Dict]:

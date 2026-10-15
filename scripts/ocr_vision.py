@@ -83,13 +83,15 @@ _TOKEN_CACHE: Dict[str, tuple] = {}  # ak -> (access_token, expires_at_epoch)
 # 教训：之前的项目为追求准度把图片切块，单文件调用 N 次，把 1000 张/月额度撑爆。
 # 本模块硬约束：
 #   1) 按"页"调用，1 页 = 1 张图 = 1 次调用，绝不切块；
-#   2) max_pages 封顶（默认 3），防止多页 PDF 无限调用；
+#   2) max_pages 封顶（CLI 默认 3，见 OCR_MAX_PAGES_DEFAULT），防止多页 PDF 无限调用；
 #   3) 文本层优先，有文本层不耗 OCR；
 #   4) 外部缓存按文件哈希，重跑零调用。
 # ---------------------------------------------------------------------------
 _OCR_CALL_LOG: List[Dict] = []
-_OCR_QUOTA_DAILY = 200     # 单日警戒（百度免费 1000/月，保守按日控制）
+_OCR_QUOTA_DAILY = 200     # 单日警戒（超过只提醒，不阻塞）
 _OCR_QUOTA_MAX = 900       # 月度硬顶，到顶即拒（留余量给人工兜底）
+_DAILY_WARNED = False      # 日警戒只提醒一次（进程内）
+OCR_MAX_PAGES_DEFAULT = 3  # 单次 OCR 的页数封顶（与 AGENTS 铁律 4「max_pages 封顶默认 3」一致）
 
 # 配额落盘（跨次运行累计，否则"月度硬顶"只在单进程内生效 = 形同虚设）
 _QUOTA_FILE = pathlib.Path(__file__).resolve().parent.parent / "runtime" / "ocr_quota.json"
@@ -98,6 +100,11 @@ _QUOTA_FILE = pathlib.Path(__file__).resolve().parent.parent / "runtime" / "ocr_
 def _month_key() -> str:
     import datetime
     return datetime.datetime.now().strftime("%Y-%m")
+
+
+def _today_key() -> str:
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d")
 
 
 def _load_quota_store() -> Dict:
@@ -132,6 +139,8 @@ def _log_ocr_call(image_path: str, ok: bool):
     month = store.setdefault(_month_key(), {"calls": 0, "ok": 0, "fail": 0})
     month["calls"] = int(month.get("calls", 0)) + 1
     month["ok" if ok else "fail"] = int(month.get("ok" if ok else "fail", 0)) + 1
+    days = store.setdefault("days", {})
+    days[_today_key()] = int(days.get(_today_key(), 0)) + 1
     _save_quota_store(store)
 
 
@@ -142,6 +151,11 @@ def ocr_quota_used() -> int:
     if persisted is None:
         return len(_OCR_CALL_LOG)
     return int(persisted)
+
+
+def ocr_quota_used_today() -> int:
+    """本日已用次数（落盘）。"""
+    return int(_load_quota_store().get("days", {}).get(_today_key(), 0))
 
 
 def ocr_quota_report() -> Dict:
@@ -256,7 +270,15 @@ def baidu_ocr_image(image_path: str, preprocess: bool = False) -> Dict:
         return {"source": "baidu", "words": [], "raw_text": "", "confidence": 0.0,
                 "error": f"OCR 月度配额硬顶已到（本月已用 {ocr_quota_used()}/{_OCR_QUOTA_MAX}），"
                          f"跳过；配额明细见 {_QUOTA_FILE}"}
+    if ocr_quota_used_today() >= _OCR_QUOTA_DAILY:
+        # 日警戒（不阻塞，只提醒一次），避免单日把月额度打爆
+        global _DAILY_WARNED
+        if not _DAILY_WARNED:
+            _DAILY_WARNED = True
+            print(f"[OCR 警告] 本日已用 {ocr_quota_used_today()}/{_OCR_QUOTA_DAILY}，"
+                  f"请确认是否继续（月度硬顶 {_OCR_QUOTA_MAX}）", file=sys.stderr)
     last = None
+    logged = False
     for ak, sk in BAIDU_ACCOUNTS:
         if not ak or not sk:
             continue
@@ -280,11 +302,12 @@ def baidu_ocr_image(image_path: str, preprocess: bool = False) -> Dict:
             if "error_code" in res:
                 ec = res["error_code"]
                 if ec in _BAIDU_QUOTA_ERROR_CODES:
-                    # 配额错误：切备用账户
+                    # 配额错误：切备用账户（**不计数**：该账户实际没消耗额度）
                     raise _QuotaError(f"baidu quota error {ec}: {res.get('error_msg')}")
                 raise RuntimeError(f"baidu error {ec}: {res.get('error_msg')}")
             words = [w.get("words", "") for w in res.get("words_result", [])]
-            _log_ocr_call(image_path, True)
+            _log_ocr_call(image_path, True)   # 每次逻辑调用只记 1 次（原来 A/B 各记会翻倍）
+            logged = True
             return {
                 "source": "baidu",
                 "words": words,
@@ -294,14 +317,17 @@ def baidu_ocr_image(image_path: str, preprocess: bool = False) -> Dict:
             }
         except _QuotaError as e:
             last = str(e)
-            _log_ocr_call(image_path, False)
             # 配额错误继续尝试备用账户
         except Exception as e:
             last = str(e)
-            _log_ocr_call(image_path, False)
             # 非配额错误：不切账户（避免无意义重试浪费配额）
+            if not logged:
+                _log_ocr_call(image_path, False)
+                logged = True
             return {"source": "baidu", "words": [], "raw_text": "", "confidence": 0.0,
                     "error": f"非配额错误，不切换账户: {last}"}
+    if not logged:
+        _log_ocr_call(image_path, False)      # 全部账户配额耗尽 → 记 1 次失败
     return {"source": "baidu", "words": [], "raw_text": "", "confidence": 0.0,
             "error": last or "baidu ocr failed"}
 
@@ -839,15 +865,17 @@ def ocr_quality_check(result: Dict, doc_type_hint: str = "") -> Dict:
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(
-            "Usage: python ocr_vision.py <pdf_or_image> [--max-pages N] [--vision]"
+            "Usage: python ocr_vision.py <pdf_or_image> [--max-pages N] [--vision]\n"
+            f"       --max-pages 默认 {OCR_MAX_PAGES_DEFAULT}，传 0 表示不限页数"
         )
         sys.exit(1)
 
     path = sys.argv[1]
-    mp = None
+    mp = OCR_MAX_PAGES_DEFAULT          # 与 AGENTS 铁律 4 一致：默认封顶 3 页
     use_vision = "--vision" in sys.argv
     if "--max-pages" in sys.argv:
-        mp = int(sys.argv[sys.argv.index("--max-pages") + 1])
+        _v = int(sys.argv[sys.argv.index("--max-pages") + 1])
+        mp = None if _v <= 0 else _v    # 0 = 不限页数
 
     if use_vision:
         # 显式走 vision 兜底轨（OpenAI 兼容端点）
