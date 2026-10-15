@@ -157,6 +157,7 @@ python scripts/ticket_overview.py
   - `SUP_PRG\`（鳕鱼/鱼片）、`SUP_ULKA\`（金线）；`进口单证票总览.html`、`进口单证统计_2026.xlsx`、`_刷新工具\刷新票总览.bat`
 - **红线区（真实单据，只读）**：`C:\Users\34009\Desktop\03_合同与订单\进口单证归档\`
 - **数据源**：C 盘框架 `runtime/tickets/*_index.json`（唯一真源）
+- **Git 层 vs 本地层**：进 Git 的只是方法/规则；真实数据与密钥（`.env`）只留本机 → 详见 `docs/Git与本地分工.md`
 - **动态进度**：以 `runtime/tickets/*_index.json`（唯一真源）+ `runtime/缺件清单.md` 为准；`runtime/项目状态.json` 为 2026-08-13 **历史快照**，不可作准。本文件不维护易变统计数字
 
 ---
