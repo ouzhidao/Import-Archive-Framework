@@ -56,7 +56,10 @@
 │   │       ├── 04_官方通关单证/ 05_质量与付款/ 06_标签及其他/
 ```
 
-- **L4 命名**：`{YYYYMM-吨位}t-{正式票ID}`，如 `202602-47.58t-PRG-SUR-LECKER-26A-01`
+- **L4 命名**：`{YYYYMM}-{吨位}t-{正式票ID}-{发票号}`，如
+  `202602-47.58t-PRG-SUR-LECKER-26A-01-PRGINV2602-048`
+  （2026-10-16 起加**发票号段**，便于按发票号检索；无发票号的票仅到票ID；
+  **年月取友好标签年月**——不是落盘月，26A-06 曾因此错成 202608）
 - **文件名**：`{YYYYMMDD}_{吨位}t_{正式票ID}_{单据类型}_{角色}_{状态}_{号码}.pdf`
   - 例：`20260301_47.58t_PRG-SUR-LECKER-26A-01_提单_正本_BOS2603QD007.pdf`
   - **吨位必带**（票总吨位）；**号码放末尾**（发票号/提单号/报关单号/检疫证号），无号码单据无此段
@@ -110,6 +113,12 @@ python scripts/audit_archive.py
 
 # 按红线区重算齐备性 + 生成缺件清单.md（缺件真源=红线区；默认 dry-run）
 python scripts/regen_completeness.py [--write]
+
+# 发票号：写进各票 index 的 invoice_no 字段（L4 命名与票总览检索都用它；默认 dry-run）
+python scripts/fill_invoice_no.py [--write]
+
+# L4 目录改名：加发票号段（红线区+F盘；默认 dry-run，--commit 需用户确认）
+python scripts/rename_l4_add_invoice.py [--commit]
 ```
 
 ## 七.5 票总览 HTML 查看器（人侧界面）

@@ -59,8 +59,8 @@ def main():
     args = ap.parse_args()
 
     archive_root = aa.load_archive_root()
-    redline = aa.scan_redline(archive_root)
     cards = aa.load_cards()
+    redline = aa.scan_redline(archive_root, [c.get("ticket_id", "") for c in cards.values()])
 
     rows, changes, placeholders = [], [], []
     for fname, card in cards.items():

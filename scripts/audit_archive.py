@@ -88,9 +88,14 @@ def type_from_redline_filename(name):
     return None
 
 
-def scan_redline(archive_root):
-    """扫红线区：{ticket_id: {'dir': 相对路径, 'files': [...], 'types': Counter}}"""
+def scan_redline(archive_root, known_tids=None):
+    """扫红线区：{ticket_id: {'dir': 相对路径, 'files': [...], 'types': Counter}}
+
+    2026-10-16 起优先用「已知票ID 出现在目录名里」匹配，兼容 L4 加发票号前后的两种命名；
+    未传 known_tids 时退化为正则（旧命名）。
+    """
     out = {}
+    known_tids = list(known_tids or [])
     if not archive_root.exists():
         return out
     for p in archive_root.rglob("*"):
@@ -106,9 +111,11 @@ def scan_redline(archive_root):
                 t = type_from_redline_filename(f.name)
                 if t:
                     types[t] += 1
-        # 目录名 = {YYYYMM}-{吨位}t-{票ID}，票ID 取吨位之后的全部（票ID 自身含 - ）
-        m = re.match(r"^\d{6}-[\d.]+t-(.+)$", p.name)
-        tid = m.group(1) if m else p.name
+        if known_tids:
+            tid = next((t for t in known_tids if t in p.name), p.name)
+        else:
+            m = re.match(r"^\d{6}-[\d.]+t-(.+)$", p.name)
+            tid = m.group(1) if m else p.name
         out[tid] = {"dir": p.relative_to(archive_root).as_posix(),
                     "files": files, "types": dict(types), "n_files": len(files)}
     return out
@@ -147,7 +154,7 @@ def main():
 
     archive_root = load_archive_root(args.archive_root)
     cards = load_cards()
-    redline = scan_redline(archive_root)
+    redline = scan_redline(archive_root, [c.get("ticket_id", "") for c in cards.values()])
     md_rows = load_missing_md()
 
     print("=" * 100)

@@ -51,6 +51,65 @@ def norm_contract(contract: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 发票号（2026-10-16 新增：L4 目录名与票总览检索都要用）
+# ---------------------------------------------------------------------------
+INVOICE_PATTERNS = [
+    r"PRGINV\d{4}-\d{3}",          # PRGINV2607-022（规范形态）
+    r"PRG\d{4}-\d{3}",             # PRG2607-022（PRG 原件上的写法，等价）
+    r"SUL-\d{2}-\d{2}-\d{4}",      # SUL-25-26-1276（ULKA）
+    r"SUL[A-Z0-9\-]{4,}",          # 其他 ULKA 变体
+]
+
+
+def normalize_invoice_no(s: str) -> str:
+    """发票号归一：PRG 原件的 `PRG2607-022` → 规范形态 `PRGINV2607-022`（其余原样）。"""
+    if not s:
+        return ""
+    s = s.strip().upper()
+    m = re.fullmatch(r"PRG(\d{4}-\d{3})", s)
+    if m:
+        return f"PRGINV{m.group(1)}"
+    return s
+
+
+def extract_invoice_no(card: Dict) -> str:
+    """取票的发票号：先看 card['invoice_no']（人工可改），否则从「发票」类单据文件名推导。
+
+    只认受控样式，识别不出返回 ""（宁可空，不可乱填）。
+    """
+    v = normalize_invoice_no(card.get("invoice_no", "") or "")
+    if v:
+        return v
+    for d in card.get("docs", []):
+        if d.get("type") != "发票":
+            continue
+        name = str(d.get("file", ""))
+        for p in INVOICE_PATTERNS:
+            m = re.search(p, name, re.I)
+            if m:
+                return normalize_invoice_no(m.group(0))
+    return ""
+
+
+def l4_name(card: Dict) -> str:
+    """L4 业务票目录名：{YYYYMM}-{吨位}t-{正式票ID}-{发票号}
+
+    2026-10-16 起加入发票号段（便于按发票号检索；无发票号的票仅到票ID）。
+    """
+    tid = card.get("ticket_id", "")
+    label = card.get("friendly_label", "") or ""
+    m = re.search(r"-(\d{6})-(\d+(?:\.\d+)?)t$", label)
+    if m:
+        ym, ton = m.group(1), m.group(2)
+    else:
+        ym = (card.get("date", "") or "")[:6]
+        ton = str(card.get("quantity_tons") or "").rstrip("0").rstrip(".")
+    base = f"{ym}-{ton}t-{tid}" if (ym and ton) else tid
+    inv = extract_invoice_no(card)
+    return f"{base}-{inv}" if inv else base
+
+
+# ---------------------------------------------------------------------------
 # M2 归票：文件名优先匹配合同号/票ID
 # ---------------------------------------------------------------------------
 CONTRACT_RE = re.compile(r"([A-Za-z0-9]+[-/]?[A-Za-z0-9]+[-/]?[A-Za-z0-9]*-?(?:26[A-Z])?[-]?[0-9]*)")

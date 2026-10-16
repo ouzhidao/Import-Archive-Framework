@@ -33,17 +33,23 @@ def load_archive_root():
     return pathlib.Path(r"C:/Users/34009/Desktop/03_合同与订单/进口单证归档")
 
 
-def build_real_l4_index():
-    """扫红线区得到 {票ID: 真实L4目录名}，修「打开整理目录」指向错（如 26A-06 label=202607 实目录=202608）。只读。"""
+def build_real_l4_index(known_tids):
+    """扫红线区得到 {票ID: 真实L4目录名}，修「打开整理目录」指向错。
+
+    2026-10-16 起改用「已知票ID 是否出现在目录名里」匹配，**同时兼容**
+    L4 加发票号前后两种命名（旧：`202607-17.58t-PRG-...-26A-07`；
+    新：`202607-17.58t-PRG-...-26A-07-PRGINV2607-041`）。只读。
+    """
     idx = {}
     root = load_archive_root()
     if not root.exists():
         return idx
     for p in root.rglob("*"):
         if p.is_dir() and p.parent.name in ("鳕鱼", "金线", "鱼片", "其他"):
-            m = re.match(r"^\d{6}-[\d.]+t-(.+)$", p.name)
-            if m:
-                idx[m.group(1)] = p.name
+            for tid in known_tids:
+                if tid in p.name:
+                    idx[tid] = p.name
+                    break
     return idx
 
 def load():
@@ -63,7 +69,7 @@ def dedup(card):
 
 def main():
     tickets = load()
-    real_l4 = build_real_l4_index()      # 红线区真实目录名（只读），修「打开整理目录」指向错
+    real_l4 = build_real_l4_index([c["ticket_id"] for c in tickets])   # 兼容加发票号前后的 L4 命名
     data = []
     for c in tickets:
         docs = dedup(c)
@@ -75,6 +81,7 @@ def main():
             "grp": grp,
             "supplier": SUP_SHORT.get(grp, grp),
             "material": c.get("material",""),
+            "invoice_no": c.get("invoice_no","") or "",
             "bl": c.get("bl_numbers",[]),
             "date": c.get("date",""),
             "year": (c.get("date","") or "")[:4],
@@ -193,7 +200,7 @@ input,select{{padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size
     <option value="2025">2025</option>
     <option value="2026">2026</option>
   </select>
-  <input id="kw" placeholder="搜索 票ID/提单/发票/单证类型..." oninput="setKw(this.value)">
+  <input id="kw" placeholder="搜索 票ID/发票号/提单/单证类型..." oninput="setKw(this.value)">
 </div>
 
 <div class="stats" id="stats"></div>
@@ -218,7 +225,7 @@ function matchTicket(t){{
   if (MAT && t.material!==MAT) return false;
   if (YEAR && t.year!==YEAR) return false;
   if (KW){{
-    const hay = (t.label+' '+t.tid+' '+t.bl.join(' ')+' '+Object.keys(t.types).join(' ')).toLowerCase();
+    const hay = (t.label+' '+t.tid+' '+t.bl.join(' ')+' '+(t.invoice_no||'')+' '+Object.keys(t.types).join(' ')).toLowerCase();
     if (!hay.includes(KW.toLowerCase())) return false;
   }}
   return true;
@@ -264,7 +271,7 @@ function render(){{
     html += `<div class="ticket">
       <div class="thead">
         <span class="label">${{t.label}}</span>
-        <span>${{t.supplier}} / ${{t.material}} / ${{t.date}} / 提单:${{bl}}</span>
+        <span>${{t.supplier}} / ${{t.material}} / ${{t.date}} / 发票号:${{t.invoice_no||'-'}} / 提单:${{bl}}</span>
         <span class="badge b ${{st}}">${{st_txt}}</span>
         <span>${{t.n}}份单据</span>
       </div>

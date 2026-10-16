@@ -62,6 +62,19 @@ L4_RE = re.compile(r"^\d{6}-[\d.]+t-(.+)$")
 DATE8_RE = re.compile(r"^(\d{8})_")
 
 
+# L4 命名统一走 pipeline_core.l4_name（与票总览同源；含发票号段）
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+try:
+    from pipeline_core import l4_name as _pc_l4_name
+except Exception:                                     # 兜底：pipeline_core 不可用时退化为旧命名
+    def _pc_l4_name(card):
+        tid = card.get("ticket_id", "")
+        m = re.search(r"-(\d{6})-(\d+(?:\.\d+)?)t$", card.get("friendly_label", "") or "")
+        ym = m.group(1) if m else (card.get("date", "") or "")[:6]
+        ton = m.group(2) if m else str(card.get("quantity_tons") or "").rstrip("0").rstrip(".")
+        return f"{ym}-{ton}t-{tid}" if (ym and ton) else tid
+
+
 def _load_archive_root():
     if PATHS_YAML.exists():
         for line in PATHS_YAML.read_text(encoding="utf-8").splitlines():
@@ -71,8 +84,11 @@ def _load_archive_root():
     return None
 
 
-def scan_redline_l4():
-    """只读扫红线区 → {票ID: (L4目录名, 常用日期前缀)}，用于让样本与真源一致。"""
+def scan_redline_l4(known_tids):
+    """只读扫红线区 → {票ID: (L4目录名, 常用日期前缀)}，用于让样本与真源一致。
+
+    2026-10-16 起用「已知票ID 出现在目录名里」匹配，兼容 L4 加发票号前后的两种命名。
+    """
     out = {}
     root = _load_archive_root()
     if not root or not root.exists():
@@ -80,8 +96,8 @@ def scan_redline_l4():
     for p in root.rglob("*"):
         if not (p.is_dir() and p.parent.name in ("鳕鱼", "金线", "鱼片", "其他")):
             continue
-        m = L4_RE.match(p.name)
-        if not m:
+        tid = next((t for t in known_tids if t in p.name), None)
+        if not tid:
             continue
         dates = []
         for f in p.rglob("*"):
@@ -90,7 +106,7 @@ def scan_redline_l4():
                 if dm:
                     dates.append(dm.group(1))
         common = max(set(dates), key=dates.count) if dates else ""
-        out[m.group(1)] = (p.name, common)
+        out[tid] = (p.name, common)
     return out
 
 
@@ -147,7 +163,7 @@ def main():
     out_root = pathlib.Path(args.out)
 
     cards = [json.loads(f.read_text(encoding="utf-8")) for f in sorted(TICKETS.glob("*_index.json"))]
-    real = scan_redline_l4()
+    real = scan_redline_l4([c["ticket_id"] for c in cards])
 
     if out_root.exists() and not args.dry_run:
         bak = out_root.with_name(out_root.name + f"_备份_{datetime.datetime.now():%Y%m%d_%H%M%S}")
@@ -161,11 +177,12 @@ def main():
         sup = SUP_DIR_CN.get(card.get("supplier_group", ""), card.get("supplier_group", ""))
         mat = MAT_CN.get(card.get("material", ""), card.get("material", ""))
         ym, ton = friendly_ym_ton(card)
+        l4_fallback = _pc_l4_name(card)          # {YYYYMM}-{吨位}t-{票ID}-{发票号}
         l4_real, date_real = real.get(tid, ("", ""))
-        l4 = l4_real or (f"{ym}-{ton}t-{tid}" if ton and ym else tid)
+        l4 = l4_real or l4_fallback
         date = date_real or card.get("date", "") or (ym + "01")
-        if l4_real and l4_real != f"{ym}-{ton}t-{tid}":
-            warned.append(f"{tid}: L4 用红线区真源『{l4_real}』（友好标签推得『{ym}-{ton}t-{tid}』）")
+        if l4_real and l4_real != l4_fallback:
+            warned.append(f"{tid}: L4 用红线区真源『{l4_real}』（推算『{l4_fallback}』）")
         ticket_dir = out_root / sup / mat / l4
 
         for d in card.get("docs", []):
